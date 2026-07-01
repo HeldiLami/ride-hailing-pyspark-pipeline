@@ -82,8 +82,8 @@ def generate(n=NUM_TRIPS, output=OUTPUT_PATH):
     df = inject_fraud(df)
     os.makedirs(os.path.dirname(output), exist_ok=True)
     df.to_csv(output, index=False)
-    print(f"[generator] Saved {len(df):,} records → {output}")
-    print(f"[generator] Fraud breakdown:\n{df['fraud_label'].value_counts()}")
+    print(f"Saved {len(df):,} records → {output}")
+    print(f"Fraud breakdown:\n{df['fraud_label'].value_counts()}")
 
 if __name__ == "__main__":
     generate()
