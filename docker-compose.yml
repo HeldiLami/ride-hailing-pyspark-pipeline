@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  spark-app:
+    build: .
+    container_name: ride_hailing_pipeline
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python src/data_generator.py

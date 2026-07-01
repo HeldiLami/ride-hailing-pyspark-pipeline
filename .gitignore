@@ -1,0 +1,21 @@
+# Data
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+_delta_log/
+
+# Spark
+spark-warehouse/
+derby.log
+metastore_db/
+.ivy2/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# IDE & OS
+.vscode/
+.DS_Store
