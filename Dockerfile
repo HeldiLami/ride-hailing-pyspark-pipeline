@@ -14,7 +14,11 @@ RUN pip install --no-cache-dir \
     delta-spark==3.1.0 \
     pandas==2.2.0 \
     numpy==1.26.4 \
-    pyarrow==15.0.0
+    pyarrow==15.0.0 \
+    jupyter==1.0.0 \
+    matplotlib==3.8.0 \
+    seaborn==0.13.0
+
 
 WORKDIR /app
 COPY . .
