@@ -1,8 +1,5 @@
 # Data
-data/raw/
-data/bronze/
-data/silver/
-data/gold/
+data/
 _delta_log/
 
 # Spark
@@ -23,3 +20,7 @@ __pycache__/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 */.ipynb_checkpoints/
+# Local checks
+.pytest_cache/
+.ruff_cache/
+.coverage

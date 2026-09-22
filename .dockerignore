@@ -1,0 +1,10 @@
+.git
+.venv
+data
+notebooks
+**/__pycache__
+.pytest_cache
+.ruff_cache
+spark-warehouse
+.idea
+.vscode
