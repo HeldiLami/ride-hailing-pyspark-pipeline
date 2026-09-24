@@ -1,26 +1,16 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
-RUN apt-get update && apt-get install -y \
-    default-jdk \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends default-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 ENV JAVA_HOME=/usr/lib/jvm/default-java
-ENV SPARK_VERSION=3.5.1
-ENV HADOOP_VERSION=3
-
-RUN pip install --no-cache-dir \
-    pyspark==3.5.1 \
-    delta-spark==3.1.0 \
-    pandas==2.2.0 \
-    numpy==1.26.4 \
-    pyarrow==15.0.0 \
-    jupyter==1.0.0 \
-    matplotlib==3.8.0 \
-    seaborn==0.13.0
-
+ENV PYTHONUNBUFFERED=1
+ENV PYSPARK_PYTHON=python
+ENV SPARK_LOCAL_IP=127.0.0.1
 
 WORKDIR /app
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY . .
 
-CMD ["python", "src/data_generator.py"]
+CMD ["python", "-m", "src.pipeline"]
