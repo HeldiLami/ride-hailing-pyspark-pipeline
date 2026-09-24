@@ -1,117 +1,154 @@
-# Ride-Hailing Fraud and Surge Pricing Engine
+# Ride-Hailing Fraud & Trip Intensity Pipeline
 
-A production-style Data Engineering pipeline simulating real-world Uber/Bolt data infrastructure built with PySpark, Delta Lake, and Docker.
+A production-inspired batch data engineering project using PySpark 3.5, Delta Lake 3.1,
+Python 3.11 and Docker. Synthetic ride records pass through Bronze, Silver and Gold
+tables to identify suspicious trips and summarize completed-trip activity.
 
----
-
-## Architecture and Data Flow
+## Data flow
 
 ```mermaid
-graph TD
-    Raw["Raw CSV (2M trips)"] --> Ingestion["Ingestion with Schema Enforcement (Delta Lake)"]
-
-    Ingestion --> Bronze["[Bronze Layer]"]
-
-    Bronze --> Transform1["Cleaning, Haversine Distance, Fraud Detection"]
-
-    Transform1 --> Silver["[Silver Layer]"]
-
-    Silver --> Transform2["Surge Pricing Metrics, Window Functions, Zone Ranking"]
-
-    Transform2 --> Gold["[Gold Layer]"]
-
-    style Raw fill:#1e293b,stroke:#475569,stroke-width:2px,color:#fff
-    style Ingestion fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#94a3b8
-    style Bronze fill:#78350f,stroke:#b45309,stroke-width:2px,color:#fff
-    style Transform1 fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#94a3b8
-    style Silver fill:#334155,stroke:#64748b,stroke-width:2px,color:#fff
-    style Transform2 fill:#0f172a,stroke:#4ade80,stroke-width:1px,color:#94a3b8
-    style Gold fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
+flowchart LR
+    CSV[Raw CSV] --> Bronze[Bronze: typed records]
+    Bronze --> Silver[Silver: validated trips and anomaly flags]
+    Silver --> Gold[Gold: trip intensity per zone / 15 minutes]
+    Silver --> Evaluation[Gold: fraud confusion counts]
 ```
 
----
+- **Bronze:** explicit schema; malformed CSV or incompatible headers fail the run.
+- **Silver:** completed trips with valid IDs, timestamps, coordinates, positive duration
+  and finite nonnegative fare. Exact duplicates collapse; all conflicting versions
+  of an ID are excluded. Source CSV remains available for investigation.
+- **Features:** Haversine straight-line distance, speed and rounded geographic grid.
+- **Anomaly rules:** speed over 150 km/h or distance below 10 meters. These are
+  suspicious patterns, not proof of fraud.
+- **Gold intensity:** unflagged trip count per grid cell per fixed 15-minute UTC
+  interval, unique drivers, average fare/distance and zone ranking. Ties share a rank.
+  Only observed zones/windows appear. This measures completed-trip activity, not
+  unmet demand, available supply or a pricing multiplier.
+- **Evaluation:** counts by synthetic `fraud_label` versus predicted `is_fraud`,
+  restricted to Silver trips. Labels never enter prediction logic.
 
-## Tech Stack
+## Quick start
 
-| Tool               | Purpose                        |
-| :----------------- | :----------------------------- |
-| **PySpark 3.5**    | Distributed data processing    |
-| **Delta Lake 3.1** | ACID transactions, time travel |
-| **Docker**         | Reproducible environment       |
-| **Python 3.11**    | Pipeline orchestration         |
-
----
-
-## Key Features
-
-### Fraud Detection
-
-- **ghost_trip**: driver coordinates unchanged after trip completion.
-- **speed_anomaly**: computed via Haversine formula, flags trips exceeding 150 km/h.
-
-### Surge Pricing Engine
-
-- Demand/supply ratio per geographic grid zone (2 decimal lat/lon precision).
-- 15-minute rolling time windows.
-- Dynamic multiplier: 1.0x to 2.5x based on zone saturation.
-
-### Medallion Architecture
-
-- **Bronze**: raw data preserved as-is.
-- **Silver**: cleaned, enriched, fraud-labeled.
-- **Gold**: business-ready aggregations.
-
----
-
-## Quick Start
-
-Prerequisites: Docker Desktop
+Prerequisites: Docker Desktop running with Linux containers. First build requires
+internet for Python packages; the first Spark session downloads Delta JVM dependencies.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ride-hailing-pipeline.git
-cd ride-hailing-pipeline
-
-# Generate 2M mock trip records
-docker build -t ride-hailing-pipeline .
-docker run --rm -v ${PWD}/data:/app/data ride-hailing-pipeline python src/data_generator.py
-
-# Run full pipeline: Bronze -> Silver -> Gold
-docker run --rm -v ${PWD}/data:/app/data ride-hailing-pipeline python src/transformations.py
+git clone https://github.com/HeldiLami/ride-hailing-pyspark-pipeline.git
+cd ride-hailing-pyspark-pipeline
+docker compose build
+docker compose run --rm spark-app python -m src.pipeline --generate --trips 10000
 ```
 
----
+The command generates a small reproducible demo and runs CSV → Bronze → Silver → Gold.
+It prints row counts, elapsed time, sample intensity rows and fraud confusion counts.
 
-## Project Structure
+Reprocess the existing CSV without generating data:
+
+```bash
+docker compose run --rm spark-app
+```
+
+Larger synthetic run (replaces the raw CSV):
+
+```bash
+docker compose run --rm spark-app python -m src.pipeline --generate --trips 2000000 --seed 42
+```
+
+Each run **overwrites** its output Delta tables. This is a full batch refresh, not
+incremental ingestion. Use `--data-dir data/demo` for an independent dataset.
+The generator holds its dataset in Pandas memory; start small on limited hardware.
+
+If upgrading from the previous version, regenerate the CSV: the unused
+`surge_multiplier` input column has been removed. Old `data/gold/surge_metrics`
+tables are no longer read or updated.
+
+## Tests and development
+
+```bash
+docker compose run --rm spark-app python -m pytest -q
+docker compose run --rm spark-app ruff check src tests
+```
+
+Tests cover distance, time boundaries, invalid data, duplicate policy, anomaly
+thresholds, ground-truth independence, intensity counts/ranking, deterministic
+generation and a real CSV → Delta integration run repeated twice.
+GitHub Actions runs these checks with Python 3.11 and Java 17.
+
+For local development use Python 3.11 and Java 17:
+
+```bash
+python -m venv .venv
+# Activate .venv using your shell's activation command.
+python -m pip install -r requirements-dev.txt
+python -m src.pipeline --generate --trips 10000
+python -m pytest -q
+```
+
+Notebook dependencies are optional: `pip install -r requirements-notebook.txt`.
+The EDA notebook describes synthetic raw data; it is not an evaluation of the
+fraud detector. Open it from `notebooks/` after generating data.
+
+## Structure
 
 ```text
-ride-hailing-pipeline/
-├── data/
-│   ├── raw/                 # Generated CSV (gitignored)
-│   ├── bronze/              # Delta Lake - raw ingested
-│   ├── silver/              # Delta Lake - cleaned + fraud labeled
-│   └── gold/                # Delta Lake - surge metrics
-├── src/
-│   ├── spark_session.py     # SparkSession + Delta config
-│   ├── data_generator.py    # Mock data generation (2M records)
-│   ├── ingestion.py         # CSV -> Bronze
-│   └── transformations.py   # Bronze -> Silver -> Gold
-├── tests/
-│   └── test_transformations.py
-├── notebooks/
-│   └── eda.ipynb
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── .gitignore
+src/
+  data_generator.py     Seeded synthetic CSV generation
+  ingestion.py          CSV schema and Bronze writer
+  transformations.py    Testable DataFrame functions and layer writers
+  spark_session.py      Local Spark / Delta configuration (UTC)
+  pipeline.py           CLI and full batch orchestration
+tests/                  Unit and Delta integration tests
+notebooks/eda.ipynb      Raw-data exploratory charts
+.github/workflows/      Automated lint and test checks
+data/                   Generated data and Delta tables (gitignored)
 ```
 
----
+## Input and outputs
 
-## Dataset
+CSV headers must match the order in `src/ingestion.py:SCHEMA`:
 
-2,000,000 synthetic trip records with:
+```text
+trip_id,driver_id,rider_id,vehicle_type,payment_method,pickup_lat,pickup_lon,dropoff_lat,dropoff_lon,trip_duration_sec,base_fare_usd,request_timestamp,status,fraud_label
+```
 
-- GPS coordinates within NYC bounding box.
-- 5,000 unique drivers / 50,000 unique riders.
-- ~3% injected fraud patterns (ghost trips + speed anomalies).
-- 90-day time range.
+Timestamps use `yyyy-MM-dd HH:mm:ss` and are interpreted as UTC.
+For external data without labels, provide an empty `fraud_label` column; confusion
+counts then have no ground-truth evaluation meaning.
+
+| Path | Contents |
+| --- | --- |
+| data/raw/trips.csv | Synthetic or supplied CSV |
+| data/bronze/trips | Typed input records |
+| data/silver/trips | Validated completed trips with features and flags |
+| data/gold/trip_intensity | Activity by zone and 15-minute interval |
+| data/gold/fraud_evaluation | Ground-truth/prediction confusion counts |
+
+## Dataset and limitations
+
+Verified Docker demo (`--trips 10000 --seed 42`):
+
+| Result | Count |
+| --- | ---: |
+| Bronze input rows | 10,000 |
+| Silver completed, valid trips | 8,523 |
+| Gold zone/window groups | 8,260 |
+| Retained injected ghost trips correctly flagged | 131 |
+| Retained injected speed anomalies correctly flagged | 124 |
+| Otherwise normal synthetic trips flagged for speed | 6 |
+
+The eight automated tests also passed locally in Docker. These demo counts are
+not a benchmark on real ride-hailing data.
+
+The generator supports 2 million records, 5,000 possible drivers and 50,000 possible
+riders, with uniformly sampled timestamps over 90 days and roughly 3% injected
+anomaly patterns. Pickups lie within an NYC bounding box; dropoffs, especially
+injected anomalies, may be outside it. The simulation does not model road networks,
+rush-hour demand or driver availability. Small samples may not contain every ID.
+
+Haversine distance is not road distance. Normal synthetic trips can also trigger
+rules, so perfect fraud accuracy is not assumed. Row counts and timings depend on
+the actual run and hardware; no benchmark or accuracy claim is made here.
+
+The project deliberately uses local batch processing. Streaming, orchestration
+services and incremental updates are outside its current scope.
